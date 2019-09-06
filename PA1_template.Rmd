@@ -7,19 +7,125 @@ output:
 
 
 ## Loading and preprocessing the data
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/R/Coursera/JohnHopkinsDataScientist/5-ReproducibleResearch/CourseProject1/RepData_PeerAssessment1")
+```
 
+```{r Dependencies}
+library(dplyr)
+library(ggplot2)
+
+```
+
+Data is located in Roger Peng's [github](https://github.com/McJasper/RepData_PeerAssessment1.git) and was cloned locally and to [my repo](https://github.com/McJasper/RepData_PeerAssessment1).
+Once the project was cloned locally, all data is present in the environment in the "activity.zip" file. The raw data was read and can be summarized as follows:
+```{r Get_Data}
+# Unzip local file
+if(!file.exists("activity.csv")){unzip("activity.zip")}
+# Read in raw data
+rawData <- read.csv(file = "activity.csv", sep = ",", header = T)
+
+# Display data summaries
+head(rawData)
+str(rawData)
+summary(rawData)
+```
+Date data converted to Date type.
+```{r Process/Transform_Data}
+rawData$date <- as.Date(rawData$date, "%Y-%m-%d")
+
+str(rawData)
+```
 
 
 ## What is mean total number of steps taken per day?
+```{r Mean_Steps_per_Day}
+dailySums <- rawData %>% group_by(date) %>% summarize(TotalSteps = sum(steps, na.rm = T))
+plotStats <- data.frame(Mean = mean(dailySums$TotalSteps, na.rm = T),Median = median(dailySums$TotalSteps, na.rm = T))
+```
+```{r Plot_Daily_Steps_Histogram}
+ggplot(dailySums, aes(x=TotalSteps)) + 
+  geom_histogram() +
+  geom_vline(data = plotStats, aes(xintercept = Mean, col = paste0("Mean: ", round(Mean, 2))))+
+  geom_vline(data = plotStats, aes(xintercept = Median, col = paste0("Median: ", round(Median, 2))))+
+  labs(colour = "Statistic:", title = "Histogram of Total Steps", x = "Total Steps", y = "Frequency")
 
+cat("Mean of Total Steps per day: ", plotStats$Mean)
+cat("Median of Total Steps per day: ", plotStats$Median)
 
+```
 
 ## What is the average daily activity pattern?
+```{r Average_Daily_Activity}
+intervalMeans <- rawData %>% group_by(interval) %>% summarize(averageSteps = mean(steps, na.rm = T))
+maxPoint <- intervalMeans[which.max(intervalMeans$averageSteps),]
 
+ggplot(intervalMeans, aes(x = interval, y = averageSteps)) + 
+  geom_line() +
+  labs(title = "Line plot of Average Step Activity", x = "Interval", y= "Average Steps")+
+  geom_point(data = maxPoint, col = "blue", size = 3)+
+  annotate("text", x = 1200, y = maxPoint$averageSteps, label = paste0("Maximum Steps: ", round(maxPoint$averageSteps,1)))
+
+cat("Which 5-minute interval contains the highest average steps?")
+maxPoint
+```
 
 
 ## Imputing missing values
 
+```{r Missing_Values}
+totalNAs <- sum(is.na(rawData$steps))
+cat("Total number of missing values in Step data: ", totalNAs)
+```
+Imputing values for NAs as the average value of the relevant 5-minute interval
+```{r Impute_Data}
+rawDataImputed <- rawData
+rawDataImputed$steps <- as.numeric(rawDataImputed$steps)
+rawDataImputed$steps <- unlist(lapply(X = 1:nrow(rawDataImputed), FUN = function(X){
+  if(is.na(rawDataImputed$steps[X])){
+    intervalMeans$averageSteps[match(x = rawDataImputed$interval[X], table = intervalMeans$interval)]}
+  else{ rawDataImputed$steps[X]}
+  }))
+
+```
+
+```{r Compare_Mean/Median_After_Imputation}
+
+dailyImputedSums <- rawDataImputed %>% group_by(date) %>% summarize(TotalSteps = sum(steps, na.rm = T))
+dailyImputedStats <- data.frame(Mean = mean(dailyImputedSums$TotalSteps, na.rm = T),
+                                Median = median(dailyImputedSums$TotalSteps, na.rm = T))
+
+intervalMeans <- rawDataImputed %>% group_by(interval) %>% summarize(averageSteps = mean(steps, na.rm = T))
+
+
+```
+
+```{r Historgram_After_Imputation}
+ggplot(dailyImputedSums, aes(x=TotalSteps)) + 
+  geom_histogram() +
+  geom_vline(data = dailyImputedStats, aes(xintercept = Mean, col = paste0("Mean: ", round(Mean, 2))))+
+  geom_vline(data = dailyImputedStats, aes(xintercept = Median, col = paste0("Median: ", round(Median, 2))))+
+  labs(colour = "Statistic:", title = "Histogram of Total Steps", x = "Total Steps", y = "Frequency")
+
+cat("Mean of Total Steps per day: ", dailyImputedStats$Mean)
+cat("Median of Total Steps per day: ", dailyImputedStats$Median)
+
+
+```
+Imputing data has the effect of shifting the mean and median higher.  Where as before several daily means ended up at or around 0, now those observations show up at the mean.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+**Note** This comparision is made on the non-imputed data.  NAs were simply removed.
+```{r Weekend_vs_WeekDay_Activities}
+rawData$day <- weekdays(rawData$date) 
+rawData$dayType <- ifelse(rawData$day == "Saturday" | rawData$day == "Sunday", yes = "WeekEnd", no = "WeekDay")
+
+byDayStepMeans <- rawData %>% group_by(interval, dayType) %>%summarize(averageSteps = mean(steps, na.rm = T))
+
+ggplot(byDayStepMeans, aes(x = interval, y = averageSteps)) +
+  geom_line() +
+  facet_wrap(.~dayType, ncol = 1)
+
+```
